@@ -1,261 +1,207 @@
-<h1 align="center">WhisperLiveKit</h1>
+# 🎙️ Real-Time Voice AI Assistant
 
-<p align="center">
-<img src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/demo.png" alt="WhisperLiveKit Demo" width="730">
-</p>
+A sophisticated real-time voice conversation system that combines **speech-to-text**, **AI agents**, and **text-to-speech** for seamless voice interactions. Built with FastAPI, OpenAI Whisper, AutoGen, and Edge TTS.
 
-<p align="center"><b>Real-time, Fully Local Speech-to-Text with Speaker Identification</b></p>
+## ✨ Features
 
-<p align="center">
-<a href="https://pypi.org/project/whisperlivekit/"><img alt="PyPI Version" src="https://img.shields.io/pypi/v/whisperlivekit?color=g"></a>
-<a href="https://pepy.tech/project/whisperlivekit"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/whisperlivekit?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=downloads"></a>
-<a href="https://pypi.org/project/whisperlivekit/"><img alt="Python Versions" src="https://img.shields.io/badge/python-3.9--3.13-dark_green"></a>
-<a href="https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT/Dual Licensed-dark_green"></a>
-</p>
+### 🎯 **Core Capabilities**
+- **Real-time Speech Recognition** - Live audio transcription using OpenAI Whisper
+- **Intelligent AI Agents** - Multi-agent system with specialized roles (math, stories, general)
+- **Natural Voice Synthesis** - High-quality text-to-speech with Microsoft Edge TTS
+- **Continuous Conversation** - Automatic listening restart after responses
+- **Web-based Interface** - Clean, responsive browser interface
 
+### 🤖 **AI Agent System**
+- **Manager Agent** - Routes queries to appropriate specialists
+- **Math Agent** - Handles mathematical questions with kid-friendly explanations
+- **Story Agent** - Creates engaging short stories for children
+- **General Agent** - Manages greetings, casual conversation, and general queries
+- **Fallback System** - Simple backup agent when AutoGen is unavailable
 
-Real-time speech transcription directly to your browser, with a ready-to-use backend+server and a simple frontend. ✨
+### 🔊 **Audio Processing**
+- **Low-latency Streaming** - Real-time audio processing with WebSocket
+- **Multiple Audio Formats** - WebM, Opus, WAV support
+- **Voice Activity Detection** - Intelligent speech detection
+- **Audio Quality Control** - Configurable chunk sizes and quality settings
 
-#### Powered by Leading Research:
-
-- [SimulStreaming](https://github.com/ufal/SimulStreaming) (SOTA 2025) - Ultra-low latency transcription with AlignAtt policy
-- [WhisperStreaming](https://github.com/ufal/whisper_streaming) (SOTA 2023) - Low latency transcription with LocalAgreement policy
-- [Streaming Sortformer](https://arxiv.org/abs/2507.18446) (SOTA 2025) - Advanced real-time speaker diarization
-- [Diart](https://github.com/juanmc2005/diart) (SOTA 2021) - Real-time speaker diarization
-- [Silero VAD](https://github.com/snakers4/silero-vad) (2024) - Enterprise-grade Voice Activity Detection
-
-
-> **Why not just run a simple Whisper model on every audio batch?** Whisper is designed for complete utterances, not real-time chunks. Processing small segments loses context, cuts off words mid-syllable, and produces poor transcription. WhisperLiveKit uses state-of-the-art simultaneous speech research for intelligent buffering and incremental processing.
-
-
-### Architecture
-
-<img alt="Architecture" src="https://raw.githubusercontent.com/QuentinFuxa/WhisperLiveKit/refs/heads/main/architecture.png" />
-
-*The backend supports multiple concurrent users. Voice Activity Detection reduces overhead when no voice is detected.*
-
-### Installation & Quick Start
-
-```bash
-pip install whisperlivekit
-```
-
->  **FFmpeg is required** and must be installed before using WhisperLiveKit
-> 
-> | OS | How to install |
-> |-----------|-------------|
->  | Ubuntu/Debian | `sudo apt install ffmpeg` |
-> | MacOS | `brew install ffmpeg` |
-> | Windows | Download .exe from https://ffmpeg.org/download.html and add to PATH |
-
-#### Quick Start
-1. **Start the transcription server:**
-   ```bash
-   whisperlivekit-server --model base --language en
-   ```
-
-2. **Open your browser** and navigate to `http://localhost:8000`. Start speaking and watch your words appear in real-time!
-
-
-> - See [tokenizer.py](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/simul_whisper/whisper/tokenizer.py) for the list of all available languages.
-> - For HTTPS requirements, see the **Parameters** section for SSL configuration options.
-
- 
-
-#### Optional Dependencies
-
-| Optional | `pip install` |
-|-----------|-------------|
-| Speaker diarization | `whisperlivekit[diarization]` |
-| Original Whisper backend | `whisperlivekit[whisper]` |
-| Improved timestamps backend | `whisperlivekit[whisper-timestamped]` |
-| Apple Silicon optimization backend | `whisperlivekit[mlx-whisper]` |
-| OpenAI API backend | `whisperlivekit[openai]` |
-
-See  **Parameters & Configuration** below on how to use them.
-
- 
-> **Pyannote Models Setup** For diarization, you need access to pyannote.audio models:
-> 1. [Accept user conditions](https://huggingface.co/pyannote/segmentation) for the `pyannote/segmentation` model
-> 2. [Accept user conditions](https://huggingface.co/pyannote/segmentation-3.0) for the `pyannote/segmentation-3.0` model
-> 3. [Accept user conditions](https://huggingface.co/pyannote/embedding) for the `pyannote/embedding` model
->4. Login with HuggingFace:
-> ```bash
-> huggingface-cli login
-> ```
-
-## 💻 Usage Examples
-
-#### Command-line Interface
-
-Start the transcription server with various options:
-
-```bash
-# SimulStreaming backend for ultra-low latency
-whisperlivekit-server --backend simulstreaming --model large-v3
-
-# Advanced configuration with diarization
-whisperlivekit-server --host 0.0.0.0 --port 8000 --model medium --diarization --language fr
-```
-
-
-#### Python API Integration (Backend)
-Check [basic_server](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/basic_server.py) for a more complete example of how to use the functions and classes.
-
-```python
-from whisperlivekit import TranscriptionEngine, AudioProcessor, parse_args
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
-from contextlib import asynccontextmanager
-import asyncio
-
-transcription_engine = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global transcription_engine
-    transcription_engine = TranscriptionEngine(model="medium", diarization=True, lan="en")
-    yield
-
-app = FastAPI(lifespan=lifespan)
-
-async def handle_websocket_results(websocket: WebSocket, results_generator):
-    async for response in results_generator:
-        await websocket.send_json(response)
-    await websocket.send_json({"type": "ready_to_stop"})
-
-@app.websocket("/asr")
-async def websocket_endpoint(websocket: WebSocket):
-    global transcription_engine
-
-    # Create a new AudioProcessor for each connection, passing the shared engine
-    audio_processor = AudioProcessor(transcription_engine=transcription_engine)    
-    results_generator = await audio_processor.create_tasks()
-    results_task = asyncio.create_task(handle_websocket_results(websocket, results_generator))
-    await websocket.accept()
-    while True:
-        message = await websocket.receive_bytes()
-        await audio_processor.process_audio(message)        
-```
-
-#### Frontend Implementation
-
-The package includes an HTML/JavaScript implementation [here](https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/whisperlivekit/web/live_transcription.html). You can also import it using `from whisperlivekit import get_web_interface_html` & `page = get_web_interface_html()`
-
-
-### ⚙️ Parameters & Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `--model` | Whisper model size. | `small` |
-| `--language` | Source language code or `auto` | `en` |
-| `--task` | `transcribe` or `translate` | `transcribe` |
-| `--backend` | Processing backend | `simulstreaming` |
-| `--min-chunk-size` | Minimum audio chunk size (seconds) | `1.0` |
-| `--no-vac` | Disable Voice Activity Controller | `False` |
-| `--no-vad` | Disable Voice Activity Detection | `False` |
-| `--warmup-file` | Audio file path for model warmup | `jfk.wav` |
-| `--host` | Server host address | `localhost` |
-| `--port` | Server port | `8000` |
-| `--ssl-certfile` | Path to the SSL certificate file (for HTTPS support) | `None` |
-| `--ssl-keyfile` | Path to the SSL private key file (for HTTPS support) | `None` |
-
-
-| WhisperStreaming backend options | Description | Default |
-|-----------|-------------|---------|
-| `--confidence-validation` | Use confidence scores for faster validation | `False` |
-| `--buffer_trimming` | Buffer trimming strategy (`sentence` or `segment`) | `segment` |
-
-
-| SimulStreaming backend options | Description | Default |
-|-----------|-------------|---------|
-| `--frame-threshold` | AlignAtt frame threshold (lower = faster, higher = more accurate) | `25` |
-| `--beams` | Number of beams for beam search (1 = greedy decoding) | `1` |
-| `--decoder` | Force decoder type (`beam` or `greedy`) | `auto` |
-| `--audio-max-len` | Maximum audio buffer length (seconds) | `30.0` |
-| `--audio-min-len` | Minimum audio length to process (seconds) | `0.0` |
-| `--cif-ckpt-path` | Path to CIF model for word boundary detection | `None` |
-| `--never-fire` | Never truncate incomplete words | `False` |
-| `--init-prompt` | Initial prompt for the model | `None` |
-| `--static-init-prompt` | Static prompt that doesn't scroll | `None` |
-| `--max-context-tokens` | Maximum context tokens | `None` |
-| `--model-path` | Direct path to .pt model file. Download it if not found | `./base.pt` |
-| `--preloaded-model-count` | Optional. Number of models to preload in memory to speed up loading (set up to the expected number of concurrent users) | `1` |
-
-| Diarization options | Description | Default |
-|-----------|-------------|---------|
-| `--diarization` | Enable speaker identification | `False` |
-| `--punctuation-split` | Use punctuation to improve speaker boundaries | `True` |
-| `--segmentation-model` | Hugging Face model ID for pyannote.audio segmentation model. [Available models](https://github.com/juanmc2005/diart/tree/main?tab=readme-ov-file#pre-trained-models) | `pyannote/segmentation-3.0` |
-| `--embedding-model` | Hugging Face model ID for pyannote.audio embedding model. [Available models](https://github.com/juanmc2005/diart/tree/main?tab=readme-ov-file#pre-trained-models) | `speechbrain/spkrec-ecapa-voxceleb` |
-
-### 🚀 Deployment Guide
-
-To deploy WhisperLiveKit in production:
- 
-1. **Server Setup**: Install production ASGI server & launch with multiple workers
-   ```bash
-   pip install uvicorn gunicorn
-   gunicorn -k uvicorn.workers.UvicornWorker -w 4 your_app:app
-   ```
-
-2. **Frontend**: Host your customized version of the `html` example & ensure WebSocket connection points correctly
-
-3. **Nginx Configuration** (recommended for production):
-    ```nginx    
-   server {
-       listen 80;
-       server_name your-domain.com;
-        location / {
-            proxy_pass http://localhost:8000;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-            proxy_set_header Host $host;
-    }}
-    ```
-
-4. **HTTPS Support**: For secure deployments, use "wss://" instead of "ws://" in WebSocket URL
-
-## 🐋 Docker
-
-Deploy the application easily using Docker with GPU or CPU support.
+## 🚀 Quick Start
 
 ### Prerequisites
-- Docker installed on your system
-- For GPU support: NVIDIA Docker runtime installed
+- **Python 3.8+**
+- **FFmpeg** (for audio processing)
+- **Microphone access** in your browser
 
-### Quick Start
+### Installation
 
-**With GPU acceleration (recommended):**
+1. **Clone the repository**
 ```bash
-docker build -t wlk .
-docker run --gpus all -p 8000:8000 --name wlk wlk
+git clone <repository-url>
+cd whisper_streaming_web
 ```
 
-**CPU only:**
+2. **Create virtual environment**
 ```bash
-docker build -f Dockerfile.cpu -t wlk .
-docker run -p 8000:8000 --name wlk wlk
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# Linux/Mac
+source .venv/bin/activate
 ```
 
-### Advanced Usage
-
-**Custom configuration:**
+3. **Install dependencies**
 ```bash
-# Example with custom model and language
-docker run --gpus all -p 8000:8000 --name wlk wlk --model large-v3 --language fr
+pip install -r requirements.txt
 ```
 
-### Memory Requirements
-- **Large models**: Ensure your Docker runtime has sufficient memory allocated
+4. **Set up environment variables** (optional)
+Create a `.env` file:
+```env
+# For AutoGen AI agents (optional)
+GEMINI_API_KEY=your_gemini_api_key_here
+# OR
+OPENAI_API_KEY=your_openai_api_key_here
+LLM_MODEL=gemini-1.5-flash
+```
 
+5. **Run the server**
+```bash
+python whisper_fastapi_online_server.py
+```
 
-#### Customization
+6. **Open your browser**
+Navigate to `http://localhost:8000`
 
-- `--build-arg` Options:
-  - `EXTRAS="whisper-timestamped"` - Add extras to the image's installation (no spaces). Remember to set necessary container options!
-  - `HF_PRECACHE_DIR="./.cache/"` - Pre-load a model cache for faster first-time start
-  - `HF_TKN_FILE="./token"` - Add your Hugging Face Hub access token to download gated models
+## 🎮 Usage
 
-## 🔮 Use Cases
-Capture discussions in real-time for meeting transcription, help hearing-impaired users follow conversations through accessibility tools, transcribe podcasts or videos automatically for content creation, transcribe support calls with speaker identification for customer service...
+### Basic Operation
+1. **Click the microphone button** 🎙️ to start conversation
+2. **Speak your question** clearly
+3. **Listen to the AI response** with automatic voice synthesis
+4. **Continue the conversation** - the system automatically restarts listening
+
+### Example Interactions
+- **Math**: "What is 2 plus 2?"
+- **Stories**: "Tell me a story about a lion"
+- **General**: "Hello, how are you?"
+
+### Configuration Options
+- **Chunk Size**: Adjust audio processing intervals (500ms - 5000ms)
+- **WebSocket URL**: Change server endpoint if needed
+- **Voice Selection**: Multiple high-quality neural voices available
+
+## 🏗️ Architecture
+
+### System Components
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Web Browser   │◄──►│   FastAPI Server │◄──►│   AI Agents     │
+│                 │    │                  │    │                 │
+│ • Microphone    │    │ • WebSocket      │    │ • AutoGen       │
+│ • Audio Capture │    │ • Audio Pipeline │    │ • Gemini/OpenAI │
+│ • TTS Playback  │    │ • Whisper STT    │    │ • Fallback      │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+### Audio Pipeline
+```
+Microphone → WebM/Opus → FFmpeg → PCM → Whisper → Text → AI Agent → TTS → Audio
+```
+
+### File Structure
+```
+whisper_streaming_web/
+├── whisper_fastapi_online_server.py  # Main server
+├── requirements.txt                  # Dependencies
+├── src/
+│   ├── AI_agent/
+│   │   └── ai_agent_runtime.py      # AutoGen agent system
+│   ├── web/
+│   │   └── live_transcription.html  # Frontend interface
+│   ├── whisper_streaming/           # Whisper integration
+│   └── diarization/                 # Speaker identification
+└── README.md
+```
+
+## ⚙️ Configuration
+
+### Command Line Options
+```bash
+python whisper_fastapi_online_server.py --help
+```
+
+Key parameters:
+- `--host`: Server host (default: localhost)
+- `--port`: Server port (default: 8000)
+- `--model`: Whisper model size (tiny.en, base, small, medium, large)
+- `--min-chunk-size`: Audio chunk duration in seconds
+- `--language`: Source language (en, es, fr, etc.)
+
+### Environment Variables
+- `GEMINI_API_KEY`: Google Gemini API key for AI agents
+- `OPENAI_API_KEY`: OpenAI API key (alternative to Gemini)
+- `LLM_MODEL`: Model name (default: gemini-1.5-flash)
+
+## 🔧 Advanced Features
+
+### Multi-Agent System
+The AI system uses AutoGen's multi-agent framework:
+- **Intelligent Routing**: Manager agent analyzes queries and routes to specialists
+- **Specialized Responses**: Each agent optimized for specific tasks
+- **JSON Structured Output**: Consistent response formatting
+- **Graceful Fallbacks**: Simple backup responses when needed
+
+### Audio Quality Options
+- **Multiple TTS Voices**: High-quality neural voices
+- **Adaptive Chunk Sizes**: Balance between latency and accuracy
+- **Voice Activity Detection**: Smart speech detection
+- **Audio Format Support**: WebM, Opus, WAV compatibility
+
+### Real-time Processing
+- **WebSocket Streaming**: Low-latency bidirectional communication
+- **Concurrent Processing**: Parallel audio and AI processing
+- **State Management**: Conversation flow control
+- **Error Recovery**: Robust error handling and recovery
+
+## 🛠️ Development
+
+### Key Dependencies
+- **FastAPI**: Web framework and WebSocket support
+- **OpenAI Whisper**: Speech recognition
+- **AutoGen**: Multi-agent AI framework
+- **Edge TTS**: Text-to-speech synthesis
+- **FFmpeg**: Audio processing
+- **PyTorch**: Machine learning backend
+
+### Adding New Agents
+1. Define agent in `src/AI_agent/ai_agent_runtime.py`
+2. Add to manager's handoff list
+3. Implement specialized system message
+4. Test with conversation flow
+
+### Customizing TTS
+- Modify voice selection in `_edge_voices` list
+- Adjust audio quality parameters
+- Add new TTS backends as needed
+
+## 🐛 Troubleshooting
+
+### Common Issues
+1. **Microphone not working**: Check browser permissions
+2. **FFmpeg errors**: Ensure FFmpeg is installed and in PATH
+3. **AI agent timeouts**: Check API keys and network connectivity
+4. **Audio quality issues**: Adjust chunk size and audio format
+
+### Debug Mode
+Enable detailed logging by checking browser console and server output.
+
+## 📄 License
+
+This project is open source. Please check the license file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit issues and pull requests.
+
+---
+
+**Built with ❤️ for seamless voice AI interactions**

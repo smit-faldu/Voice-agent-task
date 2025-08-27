@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Audio Transcription</title>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 20px;
+      text-align: center;
+    }
+    #recordButton {
+      width: 80px;
+      height: 80px;
+      font-size: 36px;
+      border: none;
+      border-radius: 50%;
+      background-color: white;
+      cursor: pointer;
+      box-shadow: 0 0px 10px rgba(0, 0, 0, 0.2);
+      transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+    #recordButton.recording {
+      background-color: #ff4d4d;
+      color: white;
+    }
+    #recordButton:active {
+      transform: scale(0.95);
+    }
+    #status {
+      margin-top: 20px;
+      font-size: 16px;
+      color: #333;
+    }
+    .settings-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+      margin-top: 20px;
+    }
+    .settings {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 5px;
+    }
+    #chunkSelector,
+    #websocketInput {
+      font-size: 16px;
+      padding: 5px;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      background-color: #f9f9f9;
+    }
+    #websocketInput {
+      width: 200px;
+    }
+    #chunkSelector:focus,
+    #websocketInput:focus {
+      outline: none;
+      border-color: #007bff;
+    }
+    label {
+      font-size: 14px;
+    }
+    /* Speaker-labeled transcript area */
+    #linesTranscript {
+      margin: 20px auto;
+      max-width: 600px;
+      text-align: left;
+      font-size: 16px;
+    }
+    #linesTranscript p {
+      margin: 5px 0;
+    }
+    #linesTranscript strong {
+      color: #333;
+    }
+    /* Grey buffer styling */
+    .buffer {
+      color: rgb(180, 180, 180);
+      font-style: italic;
+      margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="settings-container">
+    <button id="recordButton">🎙️</button>
+    <div class="settings">
+      <div>
+        <label for="chunkSelector">Chunk size (ms):</label>
+        <select id="chunkSelector">
+          <option value="500">500 ms</option>
+          <option value="1000" selected>1000 ms</option>
+          <option value="2000">2000 ms</option>
+          <option value="3000">3000 ms</option>
+          <option value="4000">4000 ms</option>
+          <option value="5000">5000 ms</option>
+        </select>
+      </div>
+      <div>
+        <label for="websocketInput">WebSocket URL:</label>
+        <input id="websocketInput" type="text" value="ws://localhost:8000/asr" />
+      </div>
+    </div>
+  </div>
+
+  <p id="status"></p>
+
+  <!-- Speaker-labeled transcript -->
+  <div id="linesTranscript"></div>
+  <!-- Agent reply text (shown even if no TTS audio returns) -->
+  <div id="agentReply" style="margin:20px auto; max-width:600px; text-align:left; font-size:16px; color:#0b5; white-space:pre-wrap;"></div>
+
+  <script>
+    let isRecording = false;
+    let websocket = null;
+    let micStream = null;
+    let mediaRecorder = null;
+    let isPlayingTTS = false;
+    let ttsQueue = [];
+    let chunkDuration = 1000;
+    let websocketUrl = "ws://localhost:8000/asr";
+    let userClosing = false;
+
+    const statusText = document.getElementById("status");
+    const recordButton = document.getElementById("recordButton");
+    const chunkSelector = document.getElementById("chunkSelector");
+    const websocketInput = document.getElementById("websocketInput");
+    const linesTranscriptDiv = document.getElementById("linesTranscript");
+    const agentReplyDiv = document.getElementById("agentReply");
+
+    chunkSelector.addEventListener("change", () => {
+      chunkDuration = parseInt(chunkSelector.value);
+    });
+
+    websocketInput.addEventListener("change", () => {
+      const urlValue = websocketInput.value.trim();
+      if (!urlValue.startsWith("ws://") && !urlValue.startsWith("wss://")) {
+        statusText.textContent = "Invalid WebSocket URL (must start with ws:// or wss://)";
+        return;
+      }
+      websocketUrl = urlValue;
+      statusText.textContent = "WebSocket URL updated. Ready to connect.";
+    });
+
+    function setupWebSocket() {
+      return new Promise((resolve, reject) => {
+        try {
+          websocket = new WebSocket(websocketUrl);
+        } catch (error) {
+          statusText.textContent = "Invalid WebSocket URL. Please check and try again.";
+          reject(error);
+          return;
+        }
+
+        websocket.onopen = () => {
+          statusText.textContent = "Connected to server.";
+          resolve();
+        };
+
+        websocket.onclose = () => {
+          if (userClosing) {
+            statusText.textContent = "WebSocket closed by user.";
+          } else {
+            statusText.textContent =
+              "Disconnected from the WebSocket server. (Check logs if model is loading.)";
+          }
+          userClosing = false;
+        };
+
+        websocket.onerror = () => {
+          statusText.textContent = "Error connecting to WebSocket.";
+          reject(new Error("Error connecting to WebSocket"));
+        };
+
+        // Handle messages from server
+        websocket.onmessage = async (event) => {
+          const data = JSON.parse(event.data);
+
+          // 1) Live transcription updates
+          if (data.lines || typeof data.buffer === 'string') {
+            const { lines = [], buffer = "" } = data;
+            renderLinesWithBuffer(lines, buffer);
+          }
+
+          // 2) Agent reply text (always show), with optional TTS audio
+          if (typeof data.agent_text === 'string' && data.agent_text.length > 0) {
+            agentReplyDiv.textContent = data.agent_text;
+
+            // Update status to show agent is speaking
+            if (data.conversation_state === "speaking") {
+              statusText.textContent = "🤖 Agent speaking...";
+              statusText.style.color = "#4CAF50";
+            }
+          }
+
+          // 3) Handle TTS audio
+          if (data.agent_tts_wav_b64) {
+            // Enqueue and play in sequence
+            ttsQueue.push(data);
+            if (!isPlayingTTS) {
+              await playNextTTS();
+            }
+          }
+
+          // 4) Handle conversation state changes
+          if (data.type === "restart_listening" || data.conversation_state === "listening") {
+            console.log("Restarting listening mode...");
+            statusText.textContent = "🎤 Listening for your question...";
+            statusText.style.color = "#2196F3";
+
+            // Clear previous transcription to prepare for new question
+            setTimeout(() => {
+              transcriptionDiv.innerHTML = "";
+              agentReplyDiv.textContent = "";
+            }, 500);
+          }
+
+          // 5) Handle transcription reset
+          if (data.type === "reset_transcription") {
+            console.log("Resetting transcription display...");
+            transcriptionDiv.innerHTML = "";
+            // Don't clear agent reply yet, let user see the previous response
+          }
+        };
+      });
+    }
+
+    function renderLinesWithBuffer(lines, buffer) {
+      // Clears if no lines
+      if (!Array.isArray(lines) || lines.length === 0) {
+        linesTranscriptDiv.innerHTML = "";
+        return;
+      }
+      // Build the HTML
+      // The buffer is appended to the last line if it's non-empty
+      const linesHtml = lines.map((item, idx) => {
+        let textContent = item.text;
+        if (idx === lines.length - 1 && buffer) {
+          textContent += `<span class="buffer">${buffer}</span>`;
+        }
+        return `<p>${textContent}</p>`;
+      }).join("");
+
+      linesTranscriptDiv.innerHTML = linesHtml;
+    }
+
+    async function startRecording() {
+      try {
+        // Check microphone permissions first
+        console.log("Requesting microphone access...");
+        statusText.textContent = "Requesting microphone access...";
+
+        // 1) Mic start
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+
+        console.log("Microphone access granted");
+        statusText.textContent = "Microphone access granted, starting recording...";
+        // Try different audio formats for better compatibility
+        let options = [
+          { mimeType: "audio/webm;codecs=opus" },
+          { mimeType: "audio/webm" },
+          { mimeType: "audio/ogg;codecs=opus" },
+          { mimeType: "audio/wav" }
+        ];
+
+        let selectedOptions = null;
+        for (let option of options) {
+          if (MediaRecorder.isTypeSupported(option.mimeType)) {
+            selectedOptions = option;
+            console.log(`Using audio format: ${option.mimeType}`);
+            break;
+          }
+        }
+
+        if (!selectedOptions) {
+          selectedOptions = {}; // Use default
+          console.log("Using default audio format");
+        }
+
+        mediaRecorder = new MediaRecorder(micStream, selectedOptions);
+        mediaRecorder.ondataavailable = (e) => {
+          console.log(`Audio chunk: ${e.data.size} bytes, type: ${e.data.type}`);
+
+          // Only send substantial audio chunks
+          if (e.data.size > 1000 && websocket && websocket.readyState === WebSocket.OPEN) {
+            console.log("Sending valid audio chunk");
+            websocket.send(e.data);
+          } else if (e.data.size === 0) {
+            console.warn("Received empty audio chunk");
+          } else if (e.data.size > 0 && e.data.size <= 1000) {
+            console.warn(`Received small audio chunk: ${e.data.size} bytes - skipping`);
+          }
+        };
+
+        mediaRecorder.onerror = (e) => {
+          console.error("MediaRecorder error:", e);
+          statusText.textContent = "Audio recording error. Please refresh and try again.";
+        };
+
+        mediaRecorder.onstart = () => {
+          console.log("MediaRecorder started");
+        };
+
+        mediaRecorder.start(chunkDuration);
+        isRecording = true;
+        updateUI();
+      } catch (err) {
+        statusText.textContent = "Error accessing microphone. Please allow microphone access.";
+      }
+    }
+
+    function stopRecording() {
+      userClosing = true;
+      // 3) Stop mic so no conflict between SST and Agent
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try { mediaRecorder.stop(); } catch {}
+      }
+      mediaRecorder = null;
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      isRecording = false;
+
+      if (websocket) {
+        try { websocket.close(); } catch {}
+        websocket = null;
+      }
+
+      updateUI();
+    }
+
+    async function toggleRecording() {
+      if (!isRecording) {
+        linesTranscriptDiv.innerHTML = "";
+        try {
+          await setupWebSocket();
+          await startRecording();
+        } catch (err) {
+          statusText.textContent = "Could not connect to WebSocket or access mic. Aborted.";
+        }
+      } else {
+        stopRecording();
+      }
+    }
+
+    function updateUI() {
+      recordButton.classList.toggle("recording", isRecording);
+      if (isRecording) {
+        statusText.textContent = "🎤 Listening for your question...";
+        statusText.style.color = "#2196F3";
+      } else {
+        statusText.textContent = "Click to start conversation";
+        statusText.style.color = "#666";
+      }
+    }
+
+    // 4–8) Manage flow for AI agent and TTS
+    async function playNextTTS() {
+      if (isPlayingTTS || ttsQueue.length === 0) return;
+      isPlayingTTS = true;
+
+      // Keep recording active during TTS for continuous conversation
+      const wasRecording = isRecording;
+
+      const item = ttsQueue.shift();
+      try {
+        const { agent_text, agent_tts_wav_b64, sample_rate } = item;
+
+        // Update status to show agent is speaking
+        statusText.textContent = "🤖 Agent speaking...";
+        statusText.style.color = "#4CAF50";
+
+        // Decode base64 WAV
+        const wavBytes = Uint8Array.from(atob(agent_tts_wav_b64), c => c.charCodeAt(0));
+        const blob = new Blob([wavBytes], { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+
+        await new Promise((resolve, reject) => {
+          audio.onended = () => {
+            console.log("TTS playback finished");
+            resolve();
+          };
+          audio.onerror = reject;
+          audio.play().catch(reject);
+        });
+
+        URL.revokeObjectURL(audioUrl);
+
+      } catch (e) {
+        console.error('TTS playback error:', e);
+      } finally {
+        isPlayingTTS = false;
+
+        // Update status back to listening if still recording
+        if (isRecording) {
+          statusText.textContent = "🎤 Listening for your question...";
+          statusText.style.color = "#2196F3";
+        }
+
+        // Continue with next TTS if queued
+        if (ttsQueue.length > 0) {
+          playNextTTS();
+        }
+      }
+    }
+
+    recordButton.addEventListener("click", toggleRecording);
+  </script>
+</body>
+</html>

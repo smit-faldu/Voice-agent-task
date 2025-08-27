@@ -122,6 +122,9 @@ class FixedVADIterator(VADIterator):
     If audio to be processed at once is long and multiple voiced segments detected,
     then __call__ returns the start of the first segment, and end (or middle, which means no end) of the last segment.
     """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.buffer = np.array([], dtype=np.float32)
 
     def reset_states(self):
         super().reset_states()
